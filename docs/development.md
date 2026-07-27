@@ -1,0 +1,152 @@
+# Development
+
+Workflow, debugging, and the traps that cost real time.
+
+## Setup
+
+```bash
+npm install
+npm run dev
+```
+
+Node 20+. There are no native dependencies and nothing to download at runtime.
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Dev server with hot reload |
+| `npm run build` | Type-check, then build to `dist/` |
+| `npm run preview` | Serve the production build |
+| `npm test` | Run the test suite once |
+| `npm run test:watch` | Watch mode |
+| `npm run typecheck` | Type-check only |
+
+## Debugging the 3D scene
+
+Append `?debug` to the URL to attach a console handle:
+
+```js
+__cozy.report()        // lights, shadows, draw calls, triangle count, camera
+__cozy.gl              // the WebGLRenderer
+__cozy.scene           // the scene graph
+__cozy.camera
+__cozy.THREE           // three itself, for building test objects
+```
+
+This exists because rendering bugs here are almost never visible in the code and
+almost always obvious in the object graph. `report()` deliberately includes
+`projectionHalfWidth` alongside the shadow camera's frustum bounds — if those
+two disagree, `updateProjectionMatrix()` was never called and shadows are being
+clipped to a stale box.
+
+Useful things to do with it:
+
+```js
+// Is anything actually casting?
+__cozy.scene.traverse(o => { if (o.isMesh && o.castShadow) console.log(o.name || o.type) })
+
+// Drop an obvious test object into the world.
+const m = new __cozy.THREE.Mesh(
+  new __cozy.THREE.BoxGeometry(4, 6, 4),
+  new __cozy.THREE.MeshLambertMaterial({ color: 'magenta' }))
+m.position.set(0, 3, 0); m.castShadow = true; __cozy.scene.add(m)
+
+// Isolate the toon material as a cause.
+__cozy.scene.traverse(o => {
+  if (o.isMesh && o.material?.type === 'MeshToonMaterial')
+    o.material = new __cozy.THREE.MeshLambertMaterial({ vertexColors: true })
+})
+```
+
+### Diagnosing "it renders but looks flat"
+
+Shadows failing produce no error and no warning — the scene simply looks flat.
+When that happens, work down this list:
+
+1. `__cozy.report().renderer.shadowsEnabled` — is the shadow map on at all?
+2. `report().sun.frustum` vs `report().sun.projectionHalfWidth` — do they agree?
+   If not, the projection matrix is stale.
+3. `report().sun.shadowMapSize` vs the actual allocated `light.shadow.map.width`
+   — `mapSize` is only read at allocation time.
+4. **Compare the sun's azimuth to the camera's.** If they are close, every
+   shadow is hidden behind the object casting it. This is the one that wastes
+   the most time, because everything is configured correctly and nothing is
+   visible.
+5. Measure rather than squint. Screenshot, disable every `castShadow`,
+   screenshot again, and diff the pixels — a 4× amplified difference image shows
+   exactly where shadows land and whether they are simply too subtle.
+
+Shadows are genuinely hard to see in a wide shot of the whole island. Zoom in
+before concluding they are broken.
+
+## Testing
+
+The suite is deliberately concentrated on the parts where bugs are silent and
+expensive:
+
+- **`core/hex.test.ts`** — everything spatial is built on this. `hexDistance` is
+  checked against breadth-first search, and `worldToHex` is verified to return
+  the genuinely nearest hex centre across a dense sweep, because naive rounding
+  fails only near edges and corners.
+- **`world/autoconnect.test.ts`** — mask computation, mutual connection rules,
+  and the 64-masks-reduce-to-14-orbits property as a canary on the rotation
+  logic.
+- **`world/serialize.test.ts`** — round-trip fidelity using the sample villages
+  as fixtures, plus a battery of hostile inputs. `parseWorld` must never throw.
+- **`agents/director.test.ts`** — population is derived from pieces, and
+  variance is deterministic. Both are core promises that could otherwise drift
+  silently.
+
+There are no rendering tests. Verify visual work by running the app and looking
+at it; screenshots through a headless browser work well for regressions.
+
+## Traps
+
+**Never call `Math.random()` in a piece renderer.** Chunks rebake whenever a
+neighbour changes, so anything non-deterministic twitches while the player
+builds nearby. Use the variance helpers on `PieceContext`.
+
+**Direction indices are bit positions.** The order of `HEX_DIRECTIONS` in
+`core/hex.ts` is used as bit positions by the autoconnect mask. Reordering it
+silently corrupts every connecting piece.
+
+**Piece ids are in save files.** Renaming one breaks existing villages. Add a
+migration — see `docs/save-format.md`.
+
+**`Color.set()` already converts sRGB → linear.** Calling
+`convertSRGBToLinear()` after it is a double conversion. Conversely `setHSL` and
+`setRGB` default to the *linear* working space and need `SRGBColorSpace` passed
+explicitly if you are thinking in sRGB.
+
+**`onBeforeCompile` needs `customProgramCacheKey`.** Without a distinct key, two
+materials with the same parameters share a compiled program and your shader
+injection silently does nothing.
+
+**React 19 StrictMode double-invokes effects.** Anything that mutates renderer
+state in an effect must be idempotent. The session restore in `App.tsx` guards
+against this explicitly.
+
+**`frustumCulled={false}` on instanced agents is load-bearing.** The bounding
+sphere is computed once from the geometry and never updated as agents walk, so
+culling makes the whole crowd vanish when the camera looks away from the origin.
+
+## Where to make a change
+
+| I want to… | Go to |
+| --- | --- |
+| Add a building, terrain type or animal | `docs/adding-content.md` |
+| Change how a piece looks | `src/render/pieces/` |
+| Change the palette | `COLORS` in `src/world/catalog.ts` |
+| Change lighting or the day cycle | `src/render/lighting.ts` |
+| Change how villagers behave | `src/agents/simulation.ts` |
+| Change who spawns | `spawns` on catalog entries, and `src/agents/director.ts` |
+| Change the save format | `src/world/serialize.ts`, then bump `SCHEMA_VERSION` |
+| Change build controls or undo | `src/state/store.ts` |
+| Change the UI | `src/ui/` and `src/styles.css` |
+
+## Deploying
+
+`.github/workflows/deploy.yml` builds and publishes to GitHub Pages on every
+push to the default branch. It sets `VITE_BASE=/<repo-name>/` so assets resolve
+under the Pages sub-path; `vite.config.ts` reads it.
+
+Enable it once under **Settings → Pages → Source → GitHub Actions**.
