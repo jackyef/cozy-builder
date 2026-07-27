@@ -143,10 +143,39 @@ culling makes the whole crowd vanish when the camera looks away from the origin.
 | Change build controls or undo | `src/state/store.ts` |
 | Change the UI | `src/ui/` and `src/styles.css` |
 
-## Deploying
+## CI and deploying
 
-`.github/workflows/deploy.yml` builds and publishes to GitHub Pages on every
-push to the default branch. It sets `VITE_BASE=/<repo-name>/` so assets resolve
-under the Pages sub-path; `vite.config.ts` reads it.
+There are two workflows, deliberately kept separate.
 
-Enable it once under **Settings → Pages → Source → GitHub Actions**.
+**`.github/workflows/ci.yml`** type-checks, tests and builds on every pull
+request and every push to `main`. This is the meaningful status check.
+
+**`.github/workflows/deploy.yml`** publishes to GitHub Pages on pushes to
+`main`. It sets `VITE_BASE=/<repo-name>/` so assets resolve under the Pages
+sub-path (`vite.config.ts` reads it) and copies `index.html` to `404.html`,
+since Pages has no rewrite rules and a deep link would otherwise 404.
+
+The split exists because `actions/configure-pages` fails hard when Pages has not
+been enabled on the repository — "Get Pages site failed … Not Found". That is a
+repository-settings and billing-plan question, not a statement about the code,
+and when the deploy shared a job with the build it turned an otherwise-green
+commit red and buried the real signal.
+
+So `deploy.yml` now asks the Pages API whether a site exists before doing
+anything. If not, it logs what to do and finishes successfully. Every non-200
+response is treated as "not configured" and skips rather than fails, including
+a connection error — the check must never be the thing that breaks the build.
+
+### Enabling Pages
+
+**Settings → Pages → Source → GitHub Actions**, then re-run the workflow.
+
+**Pages on a private repository requires GitHub Pro, Team or Enterprise.** On
+the Free plan the option is unavailable until the repository is public. If you
+don't want to publish it, there is nothing to do — `ci.yml` still gates the code
+and `deploy.yml` will keep skipping quietly.
+
+`actions/configure-pages` also accepts `enablement: true`, which provisions
+Pages itself. It's left off, and commented in the workflow, because it changes
+repository settings as a side effect of a push — and it can't succeed on a
+private repository on a plan without Pages anyway.
