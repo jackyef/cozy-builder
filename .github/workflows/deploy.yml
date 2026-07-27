@@ -15,17 +15,25 @@ name: Deploy to GitHub Pages
 #
 # ## Enabling Pages
 #
-# Settings -> Pages -> Source -> GitHub Actions, then re-run this workflow.
+# Settings -> Pages -> Source -> **GitHub Actions**, then re-run this workflow.
+#
+# The Source setting is the part that actually matters, and picking the wrong
+# option fails in a confusing way. With "Deploy from a branch", GitHub's own
+# legacy builder publishes the repository root verbatim — and the root
+# index.html is Vite's *source* template, which references /src/main.tsx. That
+# file only exists in development, so the published page loads and then errors
+# at runtime. The check job below detects this state explicitly and fails with
+# an explanation rather than letting it look like a code problem.
 #
 # Note that **Pages for a private repository requires GitHub Pro, Team or
 # Enterprise**. On the Free plan the option is unavailable until the repository
 # is made public.
 #
-# Alternatively, set `enablement: true` on the configure-pages step below and it
-# will provision Pages itself on the next run. That is left off by default
-# because it changes repository settings as a side effect of a push, which
-# should be a deliberate choice — and it cannot succeed on a private repository
-# on a plan that does not include Pages.
+# Setting `enablement: true` on the configure-pages step below lets the action
+# provision Pages itself when none exists. It is left off because it changes
+# repository settings as a side effect of a push. Note that it would not have
+# helped with the branch-deploy case above: the action creates a *missing* site
+# with build_type "workflow", but never updates an existing one.
 
 on:
   push:
@@ -50,39 +58,59 @@ jobs:
     outputs:
       configured: ${{ steps.pages.outputs.configured }}
     steps:
-      - name: Is Pages enabled for this repository?
+      - name: Is Pages enabled, and building from Actions?
         id: pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
+          body=$(mktemp)
+
           # `|| echo 000` matters: curl exits non-zero on a *connection*
           # failure (as opposed to an HTTP error status), and without a
           # fallback that would abort this step and fail the run — which is the
           # exact brittleness this check exists to remove.
-          status=$(curl -sS -o /dev/null -w '%{http_code}' \
+          status=$(curl -sS -o "$body" -w '%{http_code}' \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pages" || echo "000")
 
-          if [ "$status" = "200" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "GitHub Pages is enabled. Continuing to build and deploy."
+          if [ "$status" = "404" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Pages not enabled::Skipping deployment. Enable it under Settings -> Pages -> Source -> GitHub Actions, then re-run this workflow. Pages on a private repository requires GitHub Pro, Team or Enterprise."
             exit 0
           fi
 
-          echo "configured=false" >> "$GITHUB_OUTPUT"
-
-          if [ "$status" = "404" ]; then
-            echo "::notice title=Pages not enabled::Skipping deployment. Enable it under Settings -> Pages -> Source -> GitHub Actions, then re-run this workflow. Pages on a private repository requires GitHub Pro, Team or Enterprise."
-          else
+          if [ "$status" != "200" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "::warning title=Could not check Pages::The Pages API returned HTTP $status. Skipping deployment rather than failing the run."
+            exit 0
           fi
 
-          # Not a failure: the code is fine, only the deployment target is
-          # missing. ci.yml is the status check that matters.
-          exit 0
+          build_type=$(jq -r '.build_type // "unknown"' "$body")
+
+          if [ "$build_type" = "workflow" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "Pages is enabled and builds from GitHub Actions. Continuing."
+            exit 0
+          fi
+
+          # Pages exists but is set to "Deploy from a branch". This is the one
+          # state that must NOT be skipped quietly.
+          #
+          # In this mode GitHub's own legacy builder publishes the repository
+          # root verbatim, and the root index.html is Vite's *source* template —
+          # it references /src/main.tsx, which does not exist in a built site.
+          # The result is a live page that fails at runtime, while this workflow
+          # would otherwise report success and deploy nothing.
+          #
+          # `actions/configure-pages` cannot repair this: with `enablement: true`
+          # it creates a missing site with build_type "workflow", but it never
+          # updates an existing one. The setting has to be changed by hand.
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+          echo "::error title=Pages is deploying from a branch, not Actions::GitHub Pages is set to 'Deploy from a branch' (build_type=$build_type), so GitHub is publishing the repository root instead of the built site in dist/. The published index.html is Vite's source template and references /src/main.tsx, which only exists during development — so the site errors at runtime. Fix: Settings -> Pages -> Source -> GitHub Actions, then re-run this workflow (Actions -> Deploy to GitHub Pages -> Run workflow)."
+          exit 1
 
   build:
     name: Build site
