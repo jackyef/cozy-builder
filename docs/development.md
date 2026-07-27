@@ -145,6 +145,11 @@ injection silently does nothing.
 state in an effect must be idempotent. The session restore in `App.tsx` guards
 against this explicitly.
 
+**Agent spec ids must depend only on their own anchor piece.** An id built from
+a running total across the village makes every inhabitant's identity depend on
+every other piece, so placing one tile respawns the entire population somewhere
+new. `agents/director.test.ts` pins this.
+
 **`frustumCulled={false}` on instanced agents is load-bearing.** The bounding
 sphere is computed once from the geometry and never updated as agents walk, so
 culling makes the whole crowd vanish when the camera looks away from the origin.
@@ -158,6 +163,8 @@ culling makes the whole crowd vanish when the camera looks away from the origin.
 | Change the palette | `COLORS` in `src/world/catalog.ts` |
 | Change lighting or the day cycle | `src/render/lighting.ts` |
 | Change how villagers behave | `src/agents/simulation.ts` |
+| Change camera keys or panning | `src/render/KeyboardCamera.tsx` |
+| Change the day length or speeds | `DAY_LENGTH_SECONDS` in `src/render/lighting.ts`, `TIME_SCALES` in `src/state/store.ts` |
 | Change who spawns | `spawns` on catalog entries, and `src/agents/director.ts` |
 | Change the save format | `src/world/serialize.ts`, then bump `SCHEMA_VERSION` |
 | Change build controls or undo | `src/state/store.ts` |

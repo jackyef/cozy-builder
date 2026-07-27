@@ -64,6 +64,10 @@ export function HelpCard(): React.ReactElement | null {
 
       <dl className="help-card__keys">
         <div>
+          <dt>W A S D</dt>
+          <dd>Move around (hold shift to hurry)</dd>
+        </div>
+        <div>
           <dt>Right-drag</dt>
           <dd>Look around</dd>
         </div>
@@ -86,6 +90,10 @@ export function HelpCard(): React.ReactElement | null {
         <div>
           <dt>Ctrl/Cmd+Z</dt>
           <dd>Undo</dd>
+        </div>
+        <div>
+          <dt>▶ and 1×–8×</dt>
+          <dd>Let the day run, and how fast</dd>
         </div>
       </dl>
 

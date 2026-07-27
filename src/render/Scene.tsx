@@ -52,6 +52,7 @@ import { AnimatedProps } from './AnimatedProps'
 import { Agents } from './agents/Agents'
 import { HoverPreview, Picker } from './Interaction'
 import { DebugHandle } from './DebugHandle'
+import { KeyboardCamera } from './KeyboardCamera'
 import type { AnimatedProp } from './chunks'
 
 export function Scene(): React.ReactElement {
@@ -111,6 +112,7 @@ function SceneContents(): React.ReactElement {
 
       <Picker />
       <HoverPreview />
+      <KeyboardCamera />
 
       <OrbitControls
         makeDefault
@@ -242,13 +244,21 @@ function SceneEnvironment({ day }: { day: ReturnType<typeof dayCycle> }): null {
   return null
 }
 
-/** Advances the time of day when the clock is running. */
+/**
+ * Advances the time of day when the clock is running.
+ *
+ * The delta is clamped before scaling, so a backgrounded tab does not resume by
+ * jumping several days forward — at 8x an unclamped delta of a few seconds
+ * would skip right past dusk.
+ */
 function DayClock(): null {
   const timeFlowing = useBuilder((s) => s.timeFlowing)
+  const timeScale = useBuilder((s) => s.timeScale)
   const setTimeOfDay = useBuilder((s) => s.setTimeOfDay)
 
-  useFrame((_, delta) => {
+  useFrame((_, rawDelta) => {
     if (!timeFlowing) return
+    const delta = Math.min(rawDelta, 1 / 20) * timeScale
     const current = useBuilder.getState().timeOfDay
     setTimeOfDay((current + delta / DAY_LENGTH_SECONDS) % 1)
   })

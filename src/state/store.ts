@@ -38,6 +38,16 @@ import type { PieceId, PlacedPiece, Rotation, TerrainId, World } from '@/world/t
 /** How many undo steps to keep. */
 const HISTORY_LIMIT = 60
 
+/**
+ * Selectable speeds for the day cycle.
+ *
+ * Powers of two so each step is an obvious doubling rather than a vague
+ * "faster". 8x puts a full day at about half a minute, which is fast enough to
+ * watch the light sweep across the village without it strobing.
+ */
+export const TIME_SCALES = [1, 2, 4, 8] as const
+export type TimeScale = (typeof TIME_SCALES)[number]
+
 /** What a click on the ground will do. */
 export type Tool =
   | { kind: 'piece'; piece: PieceId }
@@ -74,6 +84,8 @@ export interface BuilderState {
   timeOfDay: number
   /** Whether the clock advances on its own. */
   timeFlowing: boolean
+  /** Multiplier applied to the day cycle while it is running. */
+  timeScale: TimeScale
   showAgents: boolean
   showGrid: boolean
   /** Whether the build palette is expanded (collapsed on small screens). */
@@ -101,6 +113,8 @@ export interface BuilderState {
 
   setTimeOfDay: (t: number) => void
   toggleTimeFlowing: () => void
+  setTimeScale: (scale: TimeScale) => void
+  cycleTimeScale: () => void
   toggleAgents: () => void
   toggleGrid: () => void
   togglePalette: () => void
@@ -125,6 +139,7 @@ export const useBuilder = create<BuilderState>((set, get) => ({
 
   timeOfDay: 0.38,
   timeFlowing: false,
+  timeScale: 1,
   showAgents: true,
   showGrid: false,
   paletteOpen: true,
@@ -233,7 +248,15 @@ export const useBuilder = create<BuilderState>((set, get) => ({
   dismissNotice: (id) => set((s) => ({ notices: s.notices.filter((n) => n.id !== id) })),
 
   setTimeOfDay: (timeOfDay) => set({ timeOfDay: clamp01(timeOfDay) }),
+  // Starting the clock at 1x every time would make the fast-forward buttons
+  // feel like they had been ignored, so the chosen speed is sticky.
   toggleTimeFlowing: () => set((s) => ({ timeFlowing: !s.timeFlowing })),
+  setTimeScale: (timeScale) => set({ timeScale, timeFlowing: true }),
+  cycleTimeScale: () =>
+    set((s) => {
+      const next = TIME_SCALES[(TIME_SCALES.indexOf(s.timeScale) + 1) % TIME_SCALES.length]
+      return { timeScale: next, timeFlowing: true }
+    }),
   toggleAgents: () => set((s) => ({ showAgents: !s.showAgents })),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   togglePalette: () => set((s) => ({ paletteOpen: !s.paletteOpen })),

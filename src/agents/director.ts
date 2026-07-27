@@ -17,11 +17,32 @@
  * ## How the counts work
  *
  * Every catalog entry may declare {@link AgentSpawnRule}s: a kind, a fractional
- * `count`, a roaming `radius` and a behaviour. The director sums the fractions
- * per kind and materialises one agent each time the running total crosses an
- * integer, anchoring it to whichever piece pushed it over. Fractional counts are
- * the mechanism that stops a single cottage from spawning a crowd while still
- * letting a street of ten cottages fill up naturally.
+ * `count`, a roaming `radius` and a behaviour. Fractional counts are what stop a
+ * single cottage from spawning a crowd while still letting a street of ten fill
+ * up naturally.
+ *
+ * A piece with `count: 2.5` always contributes two agents, and a third if a
+ * hash of its own coordinate falls below `0.5`. A piece with `count: 0.25`
+ * contributes one agent a quarter of the time. Across a village this averages
+ * out to the declared density, and because the roll is seeded it is stable.
+ *
+ * ## Why the decision is local to each piece
+ *
+ * This is the important property, and it was originally got wrong.
+ *
+ * The obvious implementation sums the fractions per kind and emits an agent
+ * each time a running total crosses an integer, anchoring it to whichever piece
+ * pushed it over. That produces exactly the right population — and makes every
+ * agent's identity depend on **every other piece in the village**. Placing one
+ * cottage shifts the running total, which shifts which piece anchors which
+ * agent, which changes their ids; the reconciler then sees a completely
+ * different population and respawns the lot. The visible effect is that laying
+ * down a single tile teleports every villager on the island.
+ *
+ * So the roll is made per piece, from that piece's own coordinate, and an
+ * agent's id is `kind:source:coordinate:index`. Nothing about a piece's
+ * contribution depends on what else exists, so building somewhere can never
+ * disturb an inhabitant somewhere else.
  *
  * Results are capped — see {@link MAX_AGENTS} — because a very large village
  * would otherwise plan thousands of agents and spend the whole frame budget on
@@ -36,7 +57,7 @@ import {
   parseHexKey,
   type Hex,
 } from '@/core/hex'
-import { makeRng, type Rng } from '@/core/rng'
+import { hashNoise, makeRng, type Rng } from '@/core/rng'
 import { PIECES, TERRAIN, getPiece, pieceBlocksMovement, terrainOrDefault } from '@/world/catalog'
 import type { AgentKind, AgentSpawnRule, World } from '@/world/types'
 
@@ -82,6 +103,13 @@ export interface WalkGrid {
   groundY(h: Hex): number
 }
 
+/**
+ * Height guards patrol at on top of a wall walkway.
+ *
+ * Must match the geometry in `render/pieces/castle.ts` (`WALL_WALK_HEIGHT`).
+ */
+export const WALL_WALK_ELEVATION = 1.15
+
 /** Pieces whose tops guards patrol along. */
 const RAMPART_PIECES = new Set(['castle_wall', 'tower', 'gate'])
 
@@ -123,26 +151,53 @@ export function buildWalkGrid(world: World): WalkGrid {
  * because object key order is not something to build behaviour on.
  */
 export function planAgents(world: World): AgentSpec[] {
-  interface Contribution {
-    hex: Hex
-    key: string
-    rule: AgentSpawnRule
-  }
+  const specs: AgentSpec[] = []
+  const perKind = new Map<AgentKind, number>()
 
-  const byKind = new Map<AgentKind, Contribution[]>()
-
-  const addRules = (key: string, hex: Hex, rules: readonly AgentSpawnRule[] | undefined): void => {
+  /**
+   * Materialise one piece's or tile's contribution.
+   *
+   * `source` namespaces the id so a hex that attracts the same kind from both
+   * its piece and its terrain — a fountain on water, say — cannot produce two
+   * agents with the same id.
+   */
+  const emit = (source: 'p' | 't', key: string, hex: Hex, rules: readonly AgentSpawnRule[] | undefined): void => {
     if (!rules) return
+
     for (const rule of rules) {
-      let list = byKind.get(rule.kind)
-      if (!list) {
-        list = []
-        byKind.set(rule.kind, list)
+      const whole = Math.floor(rule.count)
+      const fraction = rule.count - whole
+
+      // The fractional part is a seeded coin flip on this piece alone. Across
+      // many pieces this converges on the declared density without any piece's
+      // outcome depending on another's.
+      let count = whole
+      if (fraction > 0 && hashNoise(world.seed, hex.q, hex.r, `spawn:${source}:${rule.kind}`) < fraction) {
+        count++
       }
-      list.push({ hex, key, rule })
+
+      for (let i = 0; i < count; i++) {
+        if (specs.length >= MAX_AGENTS) return
+        const already = perKind.get(rule.kind) ?? 0
+        if (already >= MAX_PER_KIND) break
+        perKind.set(rule.kind, already + 1)
+
+        specs.push({
+          // Depends only on this piece's own coordinate, so it survives any
+          // edit elsewhere in the village.
+          id: `${rule.kind}:${source}:${key}:${i}`,
+          kind: rule.kind,
+          home: hex,
+          radius: rule.radius,
+          behavior: rule.behavior,
+          elevation: rule.behavior === 'patrol' ? WALL_WALK_ELEVATION : 0,
+        })
+      }
     }
   }
 
+  // Sorted so that hitting a cap truncates deterministically rather than
+  // depending on object key order.
   for (const key of Object.keys(world.pieces).sort()) {
     let hex: Hex
     try {
@@ -150,13 +205,10 @@ export function planAgents(world: World): AgentSpec[] {
     } catch {
       continue
     }
-    const placed = world.pieces[key]
-    addRules(key, hex, PIECES[placed.piece]?.spawns)
+    emit('p', key, hex, PIECES[world.pieces[key].piece]?.spawns)
   }
 
-  // Terrain can attract agents too — ducks belong to ponds, not to buildings.
-  // Only sample a fraction of water tiles: a large lake shouldn't mean a
-  // hundred ducks, and iterating every tile of one is wasted work.
+  // Terrain attracts agents too — ducks belong to ponds, not to buildings.
   for (const key of Object.keys(world.terrain).sort()) {
     const terrain = TERRAIN[world.terrain[key]]
     if (!terrain?.spawns) continue
@@ -166,34 +218,7 @@ export function planAgents(world: World): AgentSpec[] {
     } catch {
       continue
     }
-    addRules(key, hex, terrain.spawns)
-  }
-
-  const specs: AgentSpec[] = []
-
-  for (const kind of [...byKind.keys()].sort()) {
-    const contributions = byKind.get(kind)!
-    let running = 0
-    let spawned = 0
-
-    for (const { hex, key, rule } of contributions) {
-      running += rule.count
-      // Emit one agent per whole unit accumulated, anchored to whichever piece
-      // tipped the total over.
-      while (running >= 1 && spawned < MAX_PER_KIND && specs.length < MAX_AGENTS) {
-        running -= 1
-        specs.push({
-          id: `${kind}:${key}:${spawned}`,
-          kind,
-          home: hex,
-          radius: rule.radius,
-          behavior: rule.behavior,
-          elevation: rule.behavior === 'patrol' ? 1.15 : 0,
-        })
-        spawned++
-      }
-      if (specs.length >= MAX_AGENTS) break
-    }
+    emit('t', key, hex, terrain.spawns)
   }
 
   return specs

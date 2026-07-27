@@ -201,6 +201,34 @@ button:disabled {
   accent-color: var(--accent);
 }
 
+.toolbar__speeds {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: var(--radius-sm);
+}
+
+.toolbar__speed {
+  padding: 4px 7px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  line-height: 1.2;
+}
+
+.toolbar__speed:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.toolbar__speed.is-active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
 /* ------------------------------------------------------------------ Palette */
 
 .palette {
@@ -594,5 +622,11 @@ button:disabled {
 
   .toolbar__time input[type='range'] {
     width: 70px;
+  }
+
+  /* On a narrow screen the day-speed picker is the first thing to go: the
+     play/pause button still covers the common case. */
+  .toolbar__speeds {
+    display: none;
   }
 }

@@ -9,7 +9,8 @@
  */
 
 import { useRef, useState } from 'react'
-import { useBuilder, selectCanRedo, selectCanUndo } from '@/state/store'
+import { TIME_SCALES, useBuilder, selectCanRedo, selectCanUndo } from '@/state/store'
+import { DAY_LENGTH_SECONDS } from '@/render/lighting'
 import { downloadWorld, readWorldFile } from '@/world/serialize'
 import { EXAMPLE_VILLAGES } from '@/world/examples'
 
@@ -126,6 +127,8 @@ function ViewSettings(): React.ReactElement {
   const setTimeOfDay = useBuilder((s) => s.setTimeOfDay)
   const timeFlowing = useBuilder((s) => s.timeFlowing)
   const toggleTimeFlowing = useBuilder((s) => s.toggleTimeFlowing)
+  const timeScale = useBuilder((s) => s.timeScale)
+  const setTimeScale = useBuilder((s) => s.setTimeScale)
   const showAgents = useBuilder((s) => s.showAgents)
   const toggleAgents = useBuilder((s) => s.toggleAgents)
 
@@ -139,7 +142,7 @@ function ViewSettings(): React.ReactElement {
         {showAgents ? '👥' : '👤'}
       </button>
 
-      <label className="toolbar__time" title="Time of day">
+      <label className="toolbar__time" title="Time of day — drag to set it by hand">
         <span aria-hidden>{timeIcon(timeOfDay)}</span>
         <input
           type="range"
@@ -155,10 +158,27 @@ function ViewSettings(): React.ReactElement {
       <button
         className={timeFlowing ? 'is-active' : ''}
         onClick={toggleTimeFlowing}
-        title={timeFlowing ? 'Pause the day' : 'Let the day run'}
+        title={timeFlowing ? 'Pause the day' : 'Let the day run on its own'}
+        aria-pressed={timeFlowing}
       >
         {timeFlowing ? '⏸' : '▶'}
       </button>
+
+      {/* Speed picker. Choosing a speed also starts the clock, so
+          fast-forwarding is one click from a standing stop rather than two. */}
+      <div className="toolbar__speeds" role="group" aria-label="Day speed">
+        {TIME_SCALES.map((scale) => (
+          <button
+            key={scale}
+            className={`toolbar__speed ${timeFlowing && timeScale === scale ? 'is-active' : ''}`}
+            onClick={() => setTimeScale(scale)}
+            title={`Run the day at ${scale}x (a full day in ${Math.round(DAY_LENGTH_SECONDS / scale)}s)`}
+            aria-pressed={timeFlowing && timeScale === scale}
+          >
+            {scale}×
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

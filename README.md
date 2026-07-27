@@ -50,6 +50,8 @@ Then open the printed URL.
 | Input | Action |
 | --- | --- |
 | **Left-drag on the ground** | Build with the selected piece |
+| **W A S D** / arrow keys | Move the camera across the island |
+| **Shift** (while moving) | Move faster |
 | **Right-drag** | Orbit the camera |
 | **Middle-drag** | Pan |
 | **Scroll** | Zoom |
@@ -62,6 +64,13 @@ Then open the printed URL.
 
 The eraser removes the piece on a tile. On a tile with nothing built on it, it
 removes the ground instead, which is how you reshape the island.
+
+## Time of day
+
+The sun can be dragged by hand with the slider in the top-right, or set running
+with **▶**. The **1× / 2× / 4× / 8×** buttons fast-forward it — at 8× a full day
+takes about half a minute, which is the quickest way to see how the village
+looks at dusk or with the lamps lit.
 
 ## Saving
 
