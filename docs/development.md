@@ -188,7 +188,29 @@ a connection error — the check must never be the thing that breaks the build.
 
 ### Enabling Pages
 
-**Settings → Pages → Source → GitHub Actions**, then re-run the workflow.
+**Settings → Pages → Source → GitHub Actions**, then re-run the workflow
+(Actions → Deploy to GitHub Pages → Run workflow).
+
+The **Source** setting is the part that matters, and choosing the other option
+fails in a way that looks like a code bug. With **Deploy from a branch**,
+GitHub's own legacy builder publishes the *repository root* verbatim — and the
+root `index.html` is Vite's source template, which references `/src/main.tsx`.
+That path only exists while the dev server is running, so the published page
+loads and then errors at runtime with nothing in the build logs to explain it.
+Meanwhile the Actions workflow deploys nothing, because branch-based publishing
+bypasses it entirely.
+
+`deploy.yml` detects this state explicitly and **fails with an explanation**,
+rather than skipping quietly as it does when Pages simply isn't set up. The
+distinction is deliberate: "no Pages site" is a legitimate steady state, but
+"Pages is publishing something other than what this pipeline builds" is a
+misconfiguration actively serving a broken page, and silence there is worse than
+a red run.
+
+`actions/configure-pages` cannot fix it either. With `enablement: true` it
+creates a *missing* site with `build_type: workflow`, but it never updates an
+existing one — so a site already set to branch-deploy stays that way until the
+setting is changed by hand.
 
 **Pages on a private repository requires GitHub Pro, Team or Enterprise.** On
 the Free plan the option is unavailable until the repository is public. If you
