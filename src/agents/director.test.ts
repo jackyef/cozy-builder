@@ -110,6 +110,96 @@ describe('population is derived from pieces', () => {
   })
 })
 
+describe('identity is stable across edits', () => {
+  // This is what stops the whole village teleporting whenever you place a
+  // tile. `reconcileAgents` matches live agents to plans by spec id, so an id
+  // that shifts when an unrelated piece appears is indistinguishable from the
+  // agent having been replaced — and it gets respawned somewhere else.
+
+  const village = (): Record<string, string> => ({
+    '5,0': 'cottage',
+    '5,2': 'cottage',
+    '6,1': 'house',
+    '7,0': 'tavern',
+    '8,2': 'market_stall',
+  })
+
+  it('keeps every existing id when a piece is added', () => {
+    const before = planAgents(worldOf(village()))
+    // Deliberately a coordinate that sorts *before* the existing keys: with a
+    // running-total scheme this is the case that renumbers everything after it.
+    const after = planAgents(worldOf({ ...village(), '-9,-9': 'cottage' }))
+
+    const beforeIds = new Set(before.map((s) => s.id))
+    const afterIds = new Set(after.map((s) => s.id))
+
+    for (const id of beforeIds) {
+      expect(afterIds.has(id), `agent ${id} lost its identity when a piece was added`).toBe(true)
+    }
+    expect(after.length).toBeGreaterThanOrEqual(before.length)
+  })
+
+  it('keeps existing homes unchanged when a piece is added', () => {
+    // Identity is necessary but not sufficient: an agent that keeps its id but
+    // is re-anchored to a different building still walks off somewhere new.
+    const before = planAgents(worldOf(village()))
+    const after = planAgents(worldOf({ ...village(), '-9,-9': 'cottage', '-4,7': 'tavern' }))
+    const afterById = new Map(after.map((s) => [s.id, s]))
+
+    for (const spec of before) {
+      const now = afterById.get(spec.id)
+      expect(now, `agent ${spec.id} vanished`).toBeDefined()
+      expect(now!.home, `agent ${spec.id} was re-anchored`).toEqual(spec.home)
+      expect(now!.kind).toBe(spec.kind)
+    }
+  })
+
+  it('keeps existing ids when an unrelated piece is removed', () => {
+    const full = { ...village(), '-9,-9': 'cottage' }
+    const before = planAgents(worldOf(full))
+    const reduced: Record<string, string> = { ...full }
+    delete reduced['-9,-9']
+    const after = planAgents(worldOf(reduced))
+
+    // Everyone except the removed cottage's own residents survives untouched.
+    const survivors = before.filter((s) => !s.id.includes(':-9,-9:'))
+    const afterIds = new Set(after.map((s) => s.id))
+    for (const spec of survivors) {
+      expect(afterIds.has(spec.id), `agent ${spec.id} was disturbed by an unrelated removal`).toBe(true)
+    }
+  })
+
+  it('is unaffected by terrain painted elsewhere', () => {
+    const base = worldOf(village())
+    const painted: World = {
+      ...base,
+      terrain: { ...base.terrain, '-7,3': 'sand', '-7,4': 'stone' },
+    }
+    expect(planAgents(painted).map((s) => s.id).sort()).toEqual(
+      planAgents(base).map((s) => s.id).sort(),
+    )
+  })
+
+  it('scales population with how much is built', () => {
+    // The stability fix must not have flattened the density response.
+    const one = planAgents(worldOf({ '0,0': 'tavern' })).length
+    const many = planAgents(
+      worldOf({ '0,0': 'tavern', '3,0': 'tavern', '0,3': 'tavern', '3,3': 'tavern' }),
+    ).length
+    expect(many).toBeGreaterThan(one)
+  })
+
+  it('still spreads low-contribution pieces out rather than spawning per piece', () => {
+    // A castle wall contributes 0.25 guards. A long run should produce roughly
+    // a quarter as many guards as blocks — not one each, and not none.
+    const run: Record<string, string> = {}
+    for (let q = 0; q < 24; q++) run[`${q},0`] = 'castle_wall'
+    const guards = planAgents(worldOf(run, 26)).filter((a) => a.kind === 'guard').length
+    expect(guards).toBeGreaterThan(1)
+    expect(guards).toBeLessThan(14)
+  })
+})
+
 describe('walkability', () => {
   it('excludes water and solid buildings, and includes paths', () => {
     const world = worldOf({ '0,0': 'cottage', '1,0': 'path', '2,0': 'field' })

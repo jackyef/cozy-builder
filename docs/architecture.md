@@ -39,6 +39,7 @@ src/
 │   ├── WorldChunks.tsx      Renders baked chunks
 │   ├── AnimatedProps.tsx    The few things that move
 │   ├── Interaction.tsx      Pointer picking and the placement preview
+│   ├── KeyboardCamera.tsx   WASD / arrow-key camera panning
 │   ├── SkyDome.tsx          Gradient sky
 │   ├── DebugHandle.tsx      `?debug` console access to the live scene
 │   └── agents/              Agent models and instanced rendering
@@ -150,6 +151,11 @@ collapses into a single undo step regardless of how many tiles it covers.
 5. `WorldChunks` recomputes chunk signatures, rebakes what changed, and renders.
 6. `Agents` replans the population and reconciles it against the live one by
    spec id, so everyone who still belongs stays exactly where they were.
+
+Step 6 only works because an agent's id depends on its own anchor piece and
+nothing else. See the docblock in `agents/director.ts` — an id derived from a
+running total makes every inhabitant's identity depend on every other piece in
+the village, and placing one tile teleports the whole population.
 
 ## Rendering pipeline
 
