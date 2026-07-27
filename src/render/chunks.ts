@@ -44,7 +44,7 @@ import { hashInts, hashNoise, hashString } from '@/core/rng'
 import { computeConnectionMask } from '@/world/autoconnect'
 import { COLORS, getPiece, terrainOrDefault } from '@/world/catalog'
 import type { World } from '@/world/types'
-import { MeshBuilder, shade, tint } from './geometry/builder'
+import { MeshBuilder, tint } from './geometry/builder'
 import { getRenderer, groundDetail } from './pieces'
 import { makeVariance } from './pieces/context'
 import { BANNER_COLORS } from './pieces/castle'
@@ -54,6 +54,15 @@ export const CHUNK_SIZE = 6
 
 /** How far the ground prisms extend below the surface. */
 const GROUND_DEPTH = 0.7
+
+/**
+ * Slight oversize applied to ground tiles, as a multiple of the circumradius.
+ *
+ * Tiles tile exactly at 1.0; this covers floating-point error along shared
+ * edges, which would otherwise show as flickering hairline cracks at glancing
+ * camera angles.
+ */
+const TILE_OVERLAP = 1.0015
 
 /** A thing that moves, and so is rendered as a real object rather than baked. */
 export interface AnimatedProp {
@@ -182,7 +191,7 @@ export function bakeChunk(world: World, cq: number, cr: number, signature: numbe
       const isWater = terrainId === 'water'
       const target = isWater ? water : solid
 
-      bakeGroundTile(target, world, cell, x, z, terrain.color, terrain.elevation, isWater)
+      bakeGroundTile(target, world, cell, x, z, terrain.color, terrain.elevation)
 
       const placed = world.pieces[key]
       if (!placed) {
@@ -228,6 +237,16 @@ export function bakeChunk(world: World, cq: number, cr: number, signature: numbe
  * slab of earth rather than a paper-thin sheet, and each tile's colour is
  * nudged from the terrain's base so large areas of one terrain don't flatten
  * into a single block of colour.
+ *
+ * ## Seamlessness
+ *
+ * `radius` must be the **circumradius**, which is exactly `HEX_SIZE`: hex
+ * centres sit `sqrt(3) * HEX_SIZE` apart and a hexagon of circumradius
+ * `HEX_SIZE` has inradius `sqrt(3)/2 * HEX_SIZE`, so two neighbours meet
+ * edge-to-edge with nothing left over. The tiny {@link TILE_OVERLAP} on top of
+ * that is insurance against hairline cracks from floating-point error along
+ * shared edges — at 0.15% of a tile it is invisible, including where two tiles
+ * sit at different elevations.
  */
 function bakeGroundTile(
   b: MeshBuilder,
@@ -237,7 +256,6 @@ function bakeGroundTile(
   z: number,
   baseColor: string,
   elevation: number,
-  isWater: boolean,
 ): void {
   const hueShift = (hashNoise(world.seed, cell.q, cell.r, 'tileHue') - 0.5) * 0.02
   const lightShift = (hashNoise(world.seed, cell.q, cell.r, 'tileLight') - 0.5) * 0.075
@@ -245,22 +263,11 @@ function bakeGroundTile(
 
   const height = GROUND_DEPTH + elevation
   b.prism({
-    radius: HEX_SIZE,
+    radius: HEX_SIZE * TILE_OVERLAP,
     height,
     color: top,
     position: [x, elevation - height / 2, z],
   })
-
-  if (!isWater) {
-    // A darker sliver at the very top edge reads as a soil lip under the turf
-    // and gives every tile a subtle outline without any outline pass.
-    b.prism({
-      radius: HEX_SIZE * 0.995,
-      height: 0.06,
-      color: shade(top, -0.16),
-      position: [x, elevation - 0.05, z],
-    })
-  }
 }
 
 /** Builds the {@link PieceContext} for one hex. */

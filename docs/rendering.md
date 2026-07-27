@@ -162,6 +162,35 @@ removes exactly the foreshortening doing the work.
 stack plus primitives that emit triangles into a shared buffer. Primitive
 geometries are cached and reused across every piece in the world.
 
+### Hex prisms must match the lattice exactly
+
+Ground tiles, field slabs and pen floors are hex prisms, and two things have to
+be right or the world stops tiling seamlessly.
+
+**`radius` is the circumradius**, which is exactly `HEX_SIZE`. Passing
+`HEX_WIDTH / 2` — the *inradius*, centre to edge — is the easy mistake and
+leaves a gap at every corner.
+
+**Pointy-top needs no rotation.** `CylinderGeometry(…, 6)` already places its
+first vertex at +Z and steps round from there, producing vertices at 30°, 90°,
+150°… which is exactly what `hexCorners` specifies. It is *flat-top* that needs
+the 30° turn.
+
+Getting that backwards was a real bug, and its symptom is worth recognising: a
+tile rotated 30° off the lattice still looks like a honeycomb, because it
+overlaps its neighbours along the six neighbour axes. But its flat edges then
+face the lattice's triple points, so every three-way corner is left with a small
+triangular hole. It reads as "there's a gap between the hexagons", not as a
+rotation error.
+
+`builder.test.ts` checks prism corners against `hexCorners` directly, asserts
+that flat edges rather than vertices face the neighbours, and verifies that
+three mutually adjacent tiles all reach their shared corner.
+
+Tiles are also baked at `TILE_OVERLAP` (1.0015× the circumradius). They tile
+exactly at 1.0; the fraction on top covers floating-point error along shared
+edges, which otherwise shows as flickering hairline cracks at glancing angles.
+
 **Bevel everything.** `roundedBox` rather than `box` wherever an edge is
 visible. A hard 90° corner catches a hard specular line; a small chamfer catches
 a soft gradient, and that is most of what separates "soft toy" from

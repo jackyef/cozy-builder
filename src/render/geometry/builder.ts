@@ -370,7 +370,24 @@ export class MeshBuilder {
   /**
    * A regular prism — the shape of a ground tile.
    *
-   * `pointy` matches our pointy-top hex orientation when `sides` is 6.
+   * `radius` is the **circumradius** (centre to vertex), matching `HEX_SIZE`.
+   * Passing the inradius instead leaves gaps between tiles; use `HEX_SIZE`, not
+   * `HEX_WIDTH / 2`.
+   *
+   * ## Orientation
+   *
+   * `CylinderGeometry` places its first vertex at +Z and steps round from
+   * there, so with six sides it *already* produces a pointy-top hexagon —
+   * vertices at 30°, 90°, 150°… in the XZ plane, exactly matching
+   * {@link hexCorners}. Pointy-top therefore needs **no rotation at all**; it is
+   * flat-top that needs the 30° turn.
+   *
+   * This was originally the other way round, and the failure was subtle enough
+   * to be worth recording: tiles rotated 30° off the lattice still *look* like a
+   * honeycomb, because they overlap along the six neighbour axes. But their flat
+   * edges then face the lattice's triple points, so each tile falls short of
+   * every three-way corner and a small triangular hole opens at each one. The
+   * symptom reads as "a gap between the hexes" rather than as a rotation error.
    */
   prism(
     opts: {
@@ -386,9 +403,7 @@ export class MeshBuilder {
     const key = `prism:${sides}:${pointy ? 1 : 0}`
     const g = cached(key, () => {
       const geo = new CylinderGeometry(1, 1, 1, sides)
-      // CylinderGeometry starts its first vertex at +X; rotating by a further
-      // 30° puts vertices at north and south, matching a pointy-top hex.
-      if (pointy && sides === 6) geo.rotateY(Math.PI / 6)
+      if (!pointy && sides === 6) geo.rotateY(Math.PI / 6)
       return geo
     })
     return this.add(g, opts.color, {

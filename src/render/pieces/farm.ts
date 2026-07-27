@@ -9,7 +9,7 @@
  * happen to be next to each other.
  */
 
-import { HEX_WIDTH, directionVector } from '@/core/hex'
+import { HEX_SIZE, HEX_WIDTH, directionVector } from '@/core/hex'
 import { connectedDirections, hasConnection } from '@/world/autoconnect'
 import { COLORS } from '@/world/catalog'
 import { shade, tint } from '../geometry/builder'
@@ -62,8 +62,11 @@ export const field: PieceRenderer = (ctx) => {
 
   b.in({ rotationY: -heading }, () => {
     // Ploughed base: a low hex slab plus raised furrow ridges.
+    // Circumradius, not inradius: `HEX_WIDTH / 2` is the centre-to-edge
+    // distance and would leave a gap at every corner between adjacent plots.
+    // The slight oversize hides floating-point seams along shared edges.
     b.prism({
-      radius: HEX_WIDTH / 2 + 0.02,
+      radius: HEX_SIZE * 1.002,
       height: 0.06,
       color: soil,
       position: [0, 0.03, 0],
@@ -304,8 +307,10 @@ export const pen: PieceRenderer = (ctx) => {
   const wood = tint(COLORS.wood, ctx.jitter('hue', 0.01), ctx.jitter('light', 0.05))
 
   // Trodden ground.
+  // Slightly inset on purpose, so a pen reads as a trodden patch within its
+  // tile rather than as ground in its own right.
   b.prism({
-    radius: HEX_WIDTH / 2 - 0.02,
+    radius: HEX_SIZE * 0.96,
     height: 0.04,
     color: shade(COLORS.dirt, -0.06),
     position: [0, 0.02, 0],
