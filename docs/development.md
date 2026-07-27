@@ -5,20 +5,40 @@ Workflow, debugging, and the traps that cost real time.
 ## Setup
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
-Node 20+. There are no native dependencies and nothing to download at runtime.
+**Node 24** and **pnpm 10**. There are no native dependencies and nothing to
+download at runtime.
+
+The pnpm version is pinned by the `packageManager` field in `package.json`, so
+`corepack enable` is enough to get the right one:
+
+```bash
+corepack enable
+```
+
+CI reads the same field rather than hardcoding a version, so there is exactly
+one place to change it.
+
+`engines.node` is `>=24`. pnpm only *warns* on a mismatch rather than refusing
+to install, so an older Node will still get you running — but CI builds on 24,
+so that is what to test against.
+
+pnpm 10 does not run dependency postinstall scripts unless they are listed in
+`pnpm.onlyBuiltDependencies`. `esbuild` (a Vite dependency) is the only one this
+project needs. If you add a dependency whose install is incomplete without its
+script, add it there — a bare warning during install is easy to miss.
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Dev server with hot reload |
-| `npm run build` | Type-check, then build to `dist/` |
-| `npm run preview` | Serve the production build |
-| `npm test` | Run the test suite once |
-| `npm run test:watch` | Watch mode |
-| `npm run typecheck` | Type-check only |
+| `pnpm run dev` | Dev server with hot reload |
+| `pnpm run build` | Type-check, then build to `dist/` |
+| `pnpm run preview` | Serve the production build |
+| `pnpm test` | Run the test suite once |
+| `pnpm run test:watch` | Watch mode |
+| `pnpm run typecheck` | Type-check only |
 
 ## Debugging the 3D scene
 

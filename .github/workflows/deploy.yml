@@ -92,17 +92,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm must be installed before setup-node: `cache: pnpm` resolves the
+      # store path by running pnpm. See the note in ci.yml.
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          node-version: 24
+          cache: pnpm
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       - name: Build
         # Pages serves a project site from /<repo-name>/, so assets have to
         # resolve from there rather than from the domain root.
-        run: npm run build
+        run: pnpm run build
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
 
