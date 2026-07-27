@@ -98,6 +98,22 @@ When that happens, work down this list:
 Shadows are genuinely hard to see in a wide shot of the whole island. Zoom in
 before concluding they are broken.
 
+### Diagnosing "the whole scene lurched"
+
+If the world appears to jump to a new position all at once, suspect the **light
+direction** before the camera or the agents. Every shadow in the village points
+away from the sun, so a discontinuity in the sun's bearing flips all of them
+simultaneously — which reads as the scene moving, not as a lighting change.
+
+This has happened once already: day and night reused the same azimuth range, so
+the light snapped 180° at dawn and dusk, twice per in-game day. Elevation was
+continuous across the boundary, so nothing looked wrong about the sun itself.
+
+`render/lighting.test.ts` now scans the entire cycle for discontinuities in
+direction, intensity and every colour channel, including across the midnight
+wrap. Anything derived from `timeOfDay` should stay continuous — it is sampled
+every frame.
+
 ## Testing
 
 The suite is deliberately concentrated on the parts where bugs are silent and
@@ -144,6 +160,10 @@ injection silently does nothing.
 **React 19 StrictMode double-invokes effects.** Anything that mutates renderer
 state in an effect must be idempotent. The session restore in `App.tsx` guards
 against this explicitly.
+
+**Anything derived from `timeOfDay` must be continuous, including at the
+dawn/dusk boundaries and across the wrap from 1 to 0.** It is sampled every
+frame; a step change becomes a visible pop. `render/lighting.test.ts` pins this.
 
 **Agent spec ids must depend only on their own anchor piece.** An id built from
 a running total across the village makes every inhabitant's identity depend on

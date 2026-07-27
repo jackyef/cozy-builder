@@ -180,10 +180,24 @@ const MIDDAY_AZIMUTH = Math.PI * 0.75
 /**
  * Sun direction for a time of day.
  *
- * The sun sweeps a 180° arc centred on {@link MIDDAY_AZIMUTH}, with elevation
- * following a sine over the daylight hours. At night the same path continues,
- * but the light is dim and blue and treated as a moon — kept above the horizon
+ * The light source travels a **full circle once per day**: the sun sweeps the
+ * 180° arc centred on {@link MIDDAY_AZIMUTH} during daylight, and the moon
+ * continues round the remaining 180° through the night, kept above the horizon
  * at a low angle so the village gets a soft rim rather than going black.
+ *
+ * ## The `+ Math.PI` on the night half is load-bearing
+ *
+ * Without it, night reuses the *same* azimuth range as day, so at dawn and dusk
+ * the light jumps 180° between one frame and the next. Elevation stays
+ * continuous across that boundary, so nothing looks wrong about the sun itself
+ * — but every shadow in the village flips to the opposite side of its object
+ * instantly. The effect on screen is that the entire scene appears to shift
+ * position in a single frame, roughly twice per in-game day.
+ *
+ * That was a real bug, and it was hard to attribute: it only shows up while the
+ * clock is running, only at two specific instants, and it looks like a camera
+ * or physics glitch rather than a lighting one. `lighting.test.ts` now scans the
+ * whole cycle for discontinuities.
  */
 function sunDirection(time: number): [number, number, number] {
   const isDay = time >= DAY_START && time <= DAY_END
@@ -198,9 +212,11 @@ function sunDirection(time: number): [number, number, number] {
       MIN_ELEVATION_DEG + 18 * Math.sin(Math.PI * progress)
 
   const elevation = (elevationDeg * Math.PI) / 180
-  // Sweep 180° centred on the midday azimuth, so sunrise and sunset sit at
-  // right angles to it and shadows swing across the scene through the day.
-  const azimuth = MIDDAY_AZIMUTH - Math.PI / 2 + Math.PI * progress
+  // Daylight sweeps the 180° arc centred on the midday azimuth; night picks up
+  // exactly where it left off and completes the circle. The half-turn offset is
+  // what keeps the two halves joined — see the docblock.
+  const azimuth =
+    MIDDAY_AZIMUTH - Math.PI / 2 + Math.PI * progress + (isDay ? 0 : Math.PI)
 
   const horizontal = Math.cos(elevation) * SUN_DISTANCE
   return [
