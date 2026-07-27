@@ -26,20 +26,24 @@ ground, and watch the place fill up with people.
 
 ## Running it
 
+Requires **Node 24** and **pnpm 10**. The pnpm version is pinned in
+`package.json`, so `corepack enable` gets you the right one.
+
 ```bash
-npm install
-npm run dev
+corepack enable
+pnpm install
+pnpm run dev
 ```
 
 Then open the printed URL.
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Dev server with hot reload |
-| `npm run build` | Type-check and build to `dist/` |
-| `npm run preview` | Serve the production build |
-| `npm test` | Run the test suite |
-| `npm run typecheck` | Type-check without building |
+| `pnpm run dev` | Dev server with hot reload |
+| `pnpm run build` | Type-check and build to `dist/` |
+| `pnpm run preview` | Serve the production build |
+| `pnpm test` | Run the test suite |
+| `pnpm run typecheck` | Type-check without building |
 
 ## Controls
 
@@ -86,8 +90,8 @@ they buy.
 
 ## Tech
 
-React 19, React Three Fiber 9, three.js r185, Zustand, Vite, TypeScript. No
-runtime asset dependencies.
+React 19, React Three Fiber 9, three.js r185, Zustand, Vite, TypeScript, on
+Node 24 with pnpm. No runtime asset dependencies.
 
 ## Licence
 

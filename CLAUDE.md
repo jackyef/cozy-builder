@@ -50,8 +50,8 @@ diagnosis checklist.
 ## Commands
 
 ```bash
-npm run dev        # dev server
-npm run build      # typecheck + build
-npm test           # 93 tests
-npm run typecheck
+pnpm run dev        # dev server
+pnpm run build      # typecheck + build
+pnpm test           # 99 tests
+pnpm run typecheck
 ```

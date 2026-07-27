@@ -29,18 +29,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm has to be installed *before* setup-node, because `cache: pnpm`
+      # resolves the store path by running pnpm. Reversing these two steps
+      # fails with "Unable to locate executable file: pnpm".
+      #
+      # No `version` input: the action reads the `packageManager` field from
+      # package.json, so the pinned version lives in exactly one place.
+      # Passing both would be an error.
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          node-version: 24
+          cache: pnpm
 
-      - run: npm ci
+      # --frozen-lockfile is the default in CI, but stating it makes the intent
+      # explicit: a lockfile that disagrees with package.json should fail here
+      # rather than be silently updated.
+      - run: pnpm install --frozen-lockfile
 
       - name: Type-check
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Test
-        run: npm test
+        run: pnpm test
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
