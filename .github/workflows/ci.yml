@@ -1,0 +1,46 @@
+name: CI
+
+# Type-check, test and build.
+#
+# This is the real gate on the code, and it is deliberately kept separate from
+# deployment. Deployment depends on GitHub Pages being enabled on the
+# repository, which is a repo-settings and billing-plan question rather than a
+# question about whether the code is correct — so it must not be able to mark a
+# perfectly good commit as failing. See deploy.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One run per ref; a new push supersedes an in-flight run rather than queueing.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Type-check, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build

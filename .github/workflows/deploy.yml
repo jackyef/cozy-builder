@@ -1,13 +1,35 @@
 name: Deploy to GitHub Pages
 
-# Builds the app and publishes it to GitHub Pages.
+# Publishes the built app to GitHub Pages.
 #
-# Enable once under Settings -> Pages -> Source -> GitHub Actions. Until then
-# the build job still runs and acts as CI; only the deploy step needs Pages.
+# ## Why this checks before it deploys
+#
+# `actions/configure-pages` fails hard when Pages has not been enabled on the
+# repository, with "Get Pages site failed ... Not Found". That is a repository
+# *settings* problem, not a code problem, but when the deploy shares a job with
+# the build it turns an otherwise-green commit red and buries the real signal.
+#
+# So this workflow asks GitHub whether Pages is configured first. If it isn't,
+# it prints what to do and finishes successfully, leaving the code checks in
+# ci.yml as the meaningful status.
+#
+# ## Enabling Pages
+#
+# Settings -> Pages -> Source -> GitHub Actions, then re-run this workflow.
+#
+# Note that **Pages for a private repository requires GitHub Pro, Team or
+# Enterprise**. On the Free plan the option is unavailable until the repository
+# is made public.
+#
+# Alternatively, set `enablement: true` on the configure-pages step below and it
+# will provision Pages itself on the next run. That is left off by default
+# because it changes repository settings as a side effect of a push, which
+# should be a deliberate choice — and it cannot succeed on a private repository
+# on a plan that does not include Pages.
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 # Allow one concurrent deployment, and let a newer push supersede an in-flight
@@ -22,7 +44,50 @@ permissions:
   id-token: write
 
 jobs:
+  check:
+    name: Check Pages availability
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.pages.outputs.configured }}
+    steps:
+      - name: Is Pages enabled for this repository?
+        id: pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          # `|| echo 000` matters: curl exits non-zero on a *connection*
+          # failure (as opposed to an HTTP error status), and without a
+          # fallback that would abort this step and fail the run — which is the
+          # exact brittleness this check exists to remove.
+          status=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pages" || echo "000")
+
+          if [ "$status" = "200" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "GitHub Pages is enabled. Continuing to build and deploy."
+            exit 0
+          fi
+
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+
+          if [ "$status" = "404" ]; then
+            echo "::notice title=Pages not enabled::Skipping deployment. Enable it under Settings -> Pages -> Source -> GitHub Actions, then re-run this workflow. Pages on a private repository requires GitHub Pro, Team or Enterprise."
+          else
+            echo "::warning title=Could not check Pages::The Pages API returned HTTP $status. Skipping deployment rather than failing the run."
+          fi
+
+          # Not a failure: the code is fine, only the deployment target is
+          # missing. ci.yml is the status check that matters.
+          exit 0
+
   build:
+    name: Build site
+    needs: check
+    if: needs.check.outputs.configured == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,15 +99,9 @@ jobs:
 
       - run: npm ci
 
-      - name: Type-check
-        run: npm run typecheck
-
-      - name: Test
-        run: npm test
-
       - name: Build
-        # GitHub Pages serves a project site from /<repo-name>/, so assets have
-        # to be resolved from there rather than from the domain root.
+        # Pages serves a project site from /<repo-name>/, so assets have to
+        # resolve from there rather than from the domain root.
         run: npm run build
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
@@ -53,12 +112,15 @@ jobs:
         run: cp dist/index.html dist/404.html
 
       - uses: actions/configure-pages@v5
+        # Set `enablement: true` here to have the action provision Pages itself.
+        # See the note at the top of this file before turning it on.
 
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
+    name: Deploy
     needs: build
     runs-on: ubuntu-latest
     environment:
